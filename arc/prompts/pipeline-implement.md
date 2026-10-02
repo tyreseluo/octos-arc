@@ -8,14 +8,31 @@ Public acceptance example (implement the FULL requirement, not just this case):
 You are editing an existing workspace. Write files with the write_file tool —
 nothing you put in chat is saved, only tool calls change the app.
 
-Layout (already scaffolded, keep it):
-- `frontend/src/index.html` — the UI, plus one .html per further route.
-- `backend/server.js` — CommonJS (`require`) Node http server on
-  `process.env.PORT || {port}`, serving `../frontend/dist` (index.html for `/`,
-  `<name>.html` for `/<name>`), plus any API routes and persistence the
-  requirement needs, 404 otherwise.
+Layout (already scaffolded; extend it by ADDING small files, keep each file
+under ~300 lines and split by feature instead of growing one file):
+- `frontend/src/<page>.html` — one file per route (`index.html` is `/`,
+  `<name>.html` is `/<name>`). Shared client code and styles go in
+  `frontend/src/assets/*.js` / `*.css`, loaded with `/assets/<file>`.
+- `backend/server.js` — the zero-dependency entry and router on
+  `process.env.PORT || {port}`. Do not rewrite it: its header comment documents
+  the `api` helpers. Each API area is its own module `backend/routes/<area>.js`
+  (`module.exports = (api) => { api.get("/api/items", handler) }`);
+  `api.page("/items/:id", "item.html")` maps a dynamic URL to a page.
+- `backend/store.js` — JSON persistence: `store.collection(name)`, then
+  `store.save()` after every change. Seed data goes in
+  `backend/seeds/<area>.js` (`module.exports = (store) => { store.collection("users").push(user) }`); each seed
+  module runs once per store, so add a new seed module rather than editing an
+  old one.
+- Shared backend helpers (sessions, validation, hashing) go in `backend/lib/*.js`.
 - The two package.json manifests already exist (build copies src/* to dist,
   start runs server.js). Update them only if a dependency or build step changes.
+- If the workspace already holds an app with a different layout, keep that
+  layout and add to it the same way: small files, one per feature.
+
+Reading (input tokens are the main cost): list_dir / glob first, then grep for
+the names you need, and read only the files — or line ranges — you will change
+or call. Never re-read a file you already read unless you changed it since.
+Change existing files with edit_file; use write_file for new files.
 
 Rules:
 - Build ONLY what this requirement needs: the smallest app that satisfies it.
@@ -31,10 +48,9 @@ Rules:
   on, be visible, and lead to a real route — no dead entries.
 - Seed data: provision every account, organization, team, repository and
   relationship the requirement's scenarios name, with the exact names, roles,
-  ownership and visibility the requirement states. Every seeded account must
-  be able to sign in with the stated credential.
-- For persistent data, seed only a brand-new store; later startups must keep
-  user edits and deletions.
+  ownership and visibility the requirement states, in this requirement's own
+  `backend/seeds/<area>.js`. Every seeded account must be able to sign in with
+  the stated credential.
 - Write only the app's own files under frontend/ and backend/. No reports,
   notes, summaries or other .md files: nobody reads them and they cost output.
 - Prefer zero runtime dependencies; if you must install, the registry is

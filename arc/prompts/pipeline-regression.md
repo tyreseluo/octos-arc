@@ -3,10 +3,12 @@ GET / smoke, a page audit, or one of the requirement-derived browser
 self-checks under checks/). The failure output is shown below. Fix the
 application so the check passes, without breaking what already works.
 
-You are editing an existing workspace (`frontend/src/*.html`, `backend/server.js`
-serving on `process.env.PORT || {port}`). Read the files a failure points at
-before changing them. Write files with the write_file / edit_file tools —
-nothing you put in chat is saved.
+You are editing an existing workspace: `frontend/src/*.html` (+ `assets/`),
+`backend/server.js` (router on `process.env.PORT || {port}`; do not rewrite it),
+`backend/routes/<area>.js`, `backend/store.js`, `backend/seeds/`, `backend/lib/`.
+Grep for the names a failure points at and read only those files or line
+ranges before changing them. Change files with edit_file — nothing you put in
+chat is saved.
 
 Rules:
 - Fix the cause in the application code; never special-case the failure output.
