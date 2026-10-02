@@ -72,7 +72,7 @@ start -> seed -> impl_<需求1> -> check_<需求1> -> impl_<需求2> -> ... -> c
 |---|---|---|
 | `OCTOS_REPAIR_ROUNDS` | 5 | 每个需求最多修几轮 |
 | `OCTOS_ARC_FINAL_REPAIRS` | 2 | 全量回归后最多修几轮 |
-| `OCTOS_TIME_BUDGET` / `OCTOS_NODE_TIME_BUDGET` | 3600 / 600 | 整体预算下限 / 每个需求的预算 |
+| `OCTOS_TIME_BUDGET` / `OCTOS_NODE_TIME_BUDGET` | 3600 / 400 | 整体预算下限 / 每个需求的预算 |
 | `OCTOS_NODE_TIMEOUT` | 1200 | 单个实现节点的时限 |
 | `OCTOS_ARC_REASONING` | none | 每个模型调用的思考强度（none/low/medium/high/max） |
 | `OCTOS_ARC_NODE_MAX_TOKENS` | 32768 | 单次调用输出上限 |

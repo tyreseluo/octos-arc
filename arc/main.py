@@ -30,7 +30,7 @@ _POLICY = {
     "verify_timeout": ("verify_timeout_seconds", "OCTOS_ARC_VERIFY_TIMEOUT", 1800),
     "max_iterations": ("max_iterations", "OCTOS_MAX_ITERATIONS", 40),
     "run_timeout": ("run_timeout_seconds", "OCTOS_TIME_BUDGET", 3600),
-    "node_budget": ("node_budget_seconds", "OCTOS_NODE_TIME_BUDGET", 200),
+    "node_budget": ("node_budget_seconds", "OCTOS_NODE_TIME_BUDGET", 400),
     "min_node_seconds": ("min_node_seconds", "OCTOS_ARC_MIN_NODE_SECONDS", 120),
     "final_reserve_seconds": ("final_reserve_seconds", "OCTOS_ARC_FINAL_RESERVE", 600),
     "final_repairs": ("final_repair_rounds", "OCTOS_ARC_FINAL_REPAIRS", 2),
