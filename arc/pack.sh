@@ -74,7 +74,8 @@ done
 # the run, so a run killed from outside still ships working code.
 # Down again once runtime test reading was removed (no locate_tests, no spec
 # mapping/slicing, smoke-only acceptance): the glue should stay well under it.
-LIMIT_PY=1250
+# 1280: requirement prompts now carry their ancestor FOLDER rules (folder_rules()).
+LIMIT_PY=1280
 PYLINES=$(find "$PKG" -name '*.py' -exec cat {} + | wc -l | tr -d ' ')
 echo "打包内容：$(find "$PKG" -maxdepth 1 -mindepth 1 -printf '%f ' 2>/dev/null || ls "$PKG" | tr '\n' ' ')"
 echo "包内 Python 行数：$PYLINES"

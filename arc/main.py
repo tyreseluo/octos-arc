@@ -75,16 +75,20 @@ def load_tree(req_dir: Path) -> dict:
 
 
 def atomic_nodes(tree: dict) -> list[dict]:
-    """Atomic requirements in dependency order (FOLDERs are grouping only)."""
+    """Atomic requirements in dependency order. FOLDERs only group, but their
+    descriptions bind every requirement beneath them (cross-cutting UI
+    contracts live there), so each copy carries its ancestors' as `_rules`."""
     flat: dict[str, dict] = {}
 
-    def walk(node: dict) -> None:
+    def walk(node: dict, rules: tuple) -> None:
         if str(node.get("type", "")).upper() != "FOLDER":
-            flat[str(node["id"])] = node
+            flat[str(node["id"])] = dict(node, _rules=rules)
+        elif str(node.get("description") or "").strip():
+            rules += ((str(node["id"]), str(node.get("name", "")), str(node["description"]).strip()),)
         for child in node.get("children") or []:
-            walk(child)
+            walk(child, rules)
 
-    walk(tree)
+    walk(tree, ())
     ordered: list[dict] = []
     seen: set[str] = set()
 
@@ -125,6 +129,16 @@ def describe(node: dict) -> str:
             if isinstance(step, dict):
                 lines.append(f"  {step.get('keyword', '')} {str(step.get('content', '')).strip()}")
     return "\n".join(lines)
+
+
+def folder_rules(members: list[dict]) -> str:
+    """The ancestor FOLDER rules of `members`, each stated once, outermost first."""
+    seen: dict[str, str] = {}
+    for node in members:
+        for fid, name, text in node.get("_rules", ()):
+            seen.setdefault(fid, f"[{fid} {name}]\n{text}")
+    return ("Rules of the requirement groups this belongs to (they bind it too):\n\n"
+            + "\n\n".join(seen.values()) + "\n\n") if seen else ""
 
 
 def dot_quote(text: str) -> str:
@@ -210,9 +224,9 @@ def build_pipeline(nodes, out, pol, ports, deadline) -> str:
     groups = group_nodes(nodes, pol["group_max_chars"] if pol["group_requirements"] else 0, 3)
     total = len(groups)
 
-    def node_body(nid, node):
+    def node_body(nid, node, rules):
         return (tmpl.replace("{node_id}", nid)
-                    .replace("{description}", untemplate(describe(node)))
+                    .replace("{description}", untemplate(rules + describe(node)))
                     .replace("{spec}", "(no public example for this requirement)")
                     .replace("{port}", str(ports[0]))
                     .replace("{ports}", ports_clause))
@@ -220,7 +234,8 @@ def build_pipeline(nodes, out, pol, ports, deadline) -> str:
     for index, members in enumerate(groups, 1):
         ids = [str(n["id"]) for n in members]; tag = "+".join(ids)
         impl, check = f"impl_{sanitize(tag)}", f"check_{sanitize(tag)}"
-        body = node_body(ids[0], members[0]) if len(ids) == 1 else "Implement ALL together, then stop:\n\n" + "\n\n".join(node_body(i, n) for i, n in zip(ids, members))
+        rules = folder_rules(members)
+        body = node_body(ids[0], members[0], rules) if len(ids) == 1 else "Implement ALL together, then stop:\n\n" + untemplate(rules) + "\n\n".join(node_body(i, n, "") for i, n in zip(ids, members))
         lines.append(impl_node(impl, tag, body)); reserve = (total - index) * pol["min_node_seconds"] + pol["final_reserve_seconds"]
         lines.append(
             f'    {check} [handler="shell_check", label="verify {dot_quote(tag)}", '
