@@ -29,9 +29,13 @@ under ~300 lines and split by feature instead of growing one file):
 - If the workspace already holds an app with a different layout, keep that
   layout and add to it the same way: small files, one per feature.
 
-Reading (input tokens are the main cost): list_dir / glob first, then grep for
-the names you need, and read only the files — or line ranges — you will change
-or call. Never re-read a file you already read unless you changed it since.
+Reading (input tokens are the main cost): the workspace map at the end of your
+input lists every app file, its line count and each route module's endpoints —
+use it instead of list_dir. grep for the names you need and read only the files,
+or line ranges, you will change or call; `backend/server.js`, `backend/store.js`
+and the package.json manifests are described above, so do not read them. Put
+independent tool calls in ONE response (read three files at once, not one per
+turn). Never re-read a file you already read unless you changed it since.
 Change existing files with edit_file; use write_file for new files.
 
 Rules:
@@ -59,7 +63,7 @@ Rules:
 Then write your own acceptance check as `checks/{node_id}.mjs`: a Node script
 that derives its steps from THIS requirement's text above (never from any
 external test file), launches chromium from '@playwright/test'
-(`import { chromium } from '@playwright/test'`), opens
+(`import { chromium, expect } from '@playwright/test'`), opens
 `process.env.E2E_BASE_URL`, and walks EVERY scenario the requirement lists,
 in order: for each GIVEN/WHEN/THEN it opens the named page, clicks, fills,
 and asserts the expected visible result with `expect` — when the requirement

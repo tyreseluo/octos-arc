@@ -48,6 +48,7 @@ def seed(src: Path) -> int:
                     shutil.copytree(base / part, out / part, dirs_exist_ok=True,
                                     ignore=shutil.ignore_patterns("node_modules", "dist", ".git"))
             print(f"[seed] workspace seeded from {base}")
+    print(inventory(out))
     return 0
 
 
@@ -332,15 +333,26 @@ def check(port: int, e2e: str | None, e2e_dir: str | None, e2e_list: str | None 
         shutil.rmtree(app, ignore_errors=True)
 
 
+ROUTE_RE = re.compile(r"""api\.(get|post|put|patch|delete|page)\(\s*["'`]([^"'`]+)["'`](?:\s*,\s*["'`]([^"'`]+)["'`])?""")
+
+
 def inventory(out: Path) -> str:
-    """App source files with line counts: the next implement node's orientation."""
+    """App files with line counts and each route module's endpoints: the next
+    implement node's orientation, so it neither lists dirs nor re-reads files."""
     rows = []
     for part in ("frontend", "backend"):
         for f in sorted((out / part).rglob("*")) if (out / part).is_dir() else []:
             rel = f.relative_to(out)
-            if f.is_file() and not {"node_modules", "dist"} & set(rel.parts) and f.stat().st_size < 1_000_000:
-                rows.append(f"{rel} ({len(f.read_bytes().splitlines())} lines)")
-    return "Workspace files: " + ", ".join(rows[:80])
+            if f.is_file() and not {"node_modules", "dist", "data"} & set(rel.parts) and f.stat().st_size < 1_000_000:
+                text = f.read_bytes().decode(errors="replace")
+                row = f"{rel.as_posix()} ({len(text.splitlines())} lines)"
+                if rel.parts[:2] == ("backend", "routes"):
+                    eps = [f"page {p} -> {page}" if m == "page" else f"{m.upper()} {p}"
+                           for m, p, page in ROUTE_RE.findall(text)]
+                    row += ": " + ", ".join(eps[:16]) if eps else ""
+                rows.append(row)
+    return ("Workspace map (use it instead of list_dir; read only what you will change or call):\n"
+            + "\n".join(rows[:80]))
 
 
 def snapshot(out: Path, dest: Path) -> None:

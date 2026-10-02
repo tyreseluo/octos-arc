@@ -188,6 +188,12 @@ class PipelineDot(unittest.TestCase):
         # ...while a genuine, intentionally-bound variable still reads as one.
         self.assertEqual(template_refs("prompt=\"use {input} here\""), ["input"])
 
+    def test_should_leave_no_unbound_template_variable_when_prompts_are_rendered(self):
+        # validate.rs rule 16 rejected every first run_pipeline call with
+        # "unbound template variable '{chromium}'" (from the self-check
+        # instructions), so each run lost a dispatch round to a retry.
+        self.assertEqual(template_refs(build([atomic("A"), atomic("B", ["A"])])), [])
+
     def test_node_ids_are_sanitised_into_legal_dot_identifiers(self):
         dot = build([atomic("REQ-1.2")])
         self.assertIn("impl_n_REQ_1_2", dot)

@@ -471,6 +471,8 @@ def main() -> int:
     if template and Path(template).is_dir() and not (out / "frontend").is_dir():
         shutil.copytree(template, out, dirs_exist_ok=True)
 
+    # Names only, never values: which knobs the platform hands us (e.g. the visual model).
+    log("[arc] env names: " + ", ".join(sorted(k for k in os.environ if re.search(r"ARCBENCH|MODEL|OPENAI|VISUAL|VISION", k))))
     tree = load_tree(req_dir)
     nodes = atomic_nodes(tree)
     node_ids = [str(n["id"]) for n in nodes]

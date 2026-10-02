@@ -110,3 +110,51 @@ class SelfCheckModuleResolution(unittest.TestCase):
         rc = self.run_check("const { chromium } = require('@playwright/test');\n"
                             "if (chromium !== 'stub') process.exit(3);\n", name="x.cjs")
         self.assertEqual(rc, 0)
+
+
+class WorkspaceMap(unittest.TestCase):
+    """The next implement node starts from this map instead of list_dir and a
+    re-read of every file (measured: 90 reads vs 18 edits on five requirements)."""
+
+    def make_app(self, root: Path):
+        (root / "backend" / "routes").mkdir(parents=True)
+        (root / "backend" / "data").mkdir()
+        (root / "frontend" / "src").mkdir(parents=True)
+        (root / "backend" / "server.js").write_text("a\nb\n")
+        (root / "backend" / "data" / "store.json").write_text("{}")
+        (root / "backend" / "routes" / "items.js").write_text(
+            'module.exports = (api) => {\n'
+            '  api.get("/api/items", list);\n'
+            "  api.post('/api/items/:id/close', close);\n"
+            '  api.page("/items/:id", "item.html");\n'
+            '};\n')
+        (root / "frontend" / "src" / "index.html").write_text("<p>x</p>\n")
+
+    def test_should_list_routes_per_module_when_backend_registers_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.make_app(Path(tmp))
+            text = verify_node.inventory(Path(tmp))
+        self.assertIn("backend/routes/items.js (5 lines): GET /api/items, POST /api/items/:id/close, "
+                      "page /items/:id -> item.html", text)
+        self.assertIn("backend/server.js (2 lines)", text)
+        self.assertIn("frontend/src/index.html (1 lines)", text)
+
+    def test_should_leave_out_runtime_data_when_mapping_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.make_app(Path(tmp))
+            self.assertNotIn("store.json", verify_node.inventory(Path(tmp)))
+
+    def test_should_print_the_map_when_seeding_the_run_dir(self):
+        import contextlib, io, os
+        with tempfile.TemporaryDirectory() as tmp:
+            src, run = Path(tmp) / "src", Path(tmp) / "run"
+            self.make_app(src)
+            run.mkdir()
+            cwd, buf = os.getcwd(), io.StringIO()
+            os.chdir(run)
+            try:
+                with contextlib.redirect_stdout(buf):
+                    verify_node.seed(src)
+            finally:
+                os.chdir(cwd)
+        self.assertIn("GET /api/items", buf.getvalue())

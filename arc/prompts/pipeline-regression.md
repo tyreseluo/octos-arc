@@ -6,8 +6,9 @@ application so the check passes, without breaking what already works.
 You are editing an existing workspace: `frontend/src/*.html` (+ `assets/`),
 `backend/server.js` (router on `process.env.PORT || {port}`; do not rewrite it),
 `backend/routes/<area>.js`, `backend/store.js`, `backend/seeds/`, `backend/lib/`.
+The workspace map at the end of the failure output lists every file and route.
 Grep for the names a failure points at and read only those files or line
-ranges before changing them. Change files with edit_file — nothing you put in
+ranges before changing them; put independent reads in one response. Change files with edit_file — nothing you put in
 chat is saved.
 
 Rules:

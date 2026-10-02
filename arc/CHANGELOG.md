@@ -775,3 +775,31 @@ Cloud: 闸门回退与守卫都尚未评测（提交 C `bea95120a928` 跑的是�
 - pack.sh 重写为 mktemp 暂存后按显式清单拷贝打包：包内容=清单本身，工作树临时产物与开发文件（tests/、tasks/、public-tests/）结构上进不了包；python 校验步骤之后统一清理 `__pycache__`/`.pyc`/`.DS_Store`（先清理后生成会让 pyc 回流）。ROUTES 参数、public-tests 不进包的语义、输出路径与文件名不变。
 
 验证（本机）：`sh arc/pack.sh` 后 zip 根含 main.py、requirements.txt、template/ 10 件，无 tests/tasks/public-tests/__pycache__；包内两个 package.json 与 `json.dumps(CODEGEN_MANIFESTS[...], indent=2)` 逐字节相等；`sh arc/pack.sh routes.json` 把校验过的规则写为包根 model-routes.json，坏规则打包即失败；模板从 zip 抽出自测 `npm run build` + `npm start`，`/` 返回种子页、未定义路径与 `/../etc/passwd` 均 404。云端未评测；仓库中已提交的 octos-arc-bundle.zip 需按原流程重打（enter_competition 的字节校验针对 main.py，本条未改运行时代码）。
+
+## 2026-10-03：hackathon 诊断与修复（云端 14.70 分，第 36 名）
+
+云端提交 `1369460f1418`（deepseek-v4-flash）：GitHub 原题 34/100、¥18.23、10035 s；Sheet 0/100、
+¥9.89；GitHub stage 1/2/3 为 4/30、0/29、0/41。计分 = 通过率 ×（预期成本 ¥0.4/条通过 ÷ 实际成本）
+的幂（成本高于预期时指数 0.2，低于预期时 0.1，上限 1.585 倍），时长不计分。依据：各运行
+`project.zip` 里的 `.arc/playwright-report.json`。
+
+| 根因 | 证据 | 修复 |
+|---|---|---|
+| FOLDER 节点上的跨需求约定从未进入提示词 | Sheet 95/100 条卡在 `getByRole('tab', {name:'Sheet1'})` 的 aria-selected，约定只写在 REQ-1 上 | `folder_rules()`：每个原子需求带上祖先描述 |
+| 自检脚本是 ESM，`NODE_PATH` 对 import 无效 | 本机复现 ERR_MODULE_NOT_FOUND；runner 镜像自带 Playwright 1.57.0 | 脚本目录放 node_modules 软链接 |
+| `{chromium}` 被预检当作未绑定模板变量 | 每次运行的首次 run_pipeline 均被拒，靠模型重试 | 改写为 `import { chromium, expect }` |
+| 预算截断 | Sheet 4800 s 做到 13 轮；GitHub REQ-6 的种子账号从未建出 | node_budget 200 → 400 s |
+| 单文件后端越长越贵 | 收尾时 server.js 85 KB，每个需求整读 | 模块化模板 + 读取纪律 + 工作区地图 |
+| stage 2/3 并行启动 | 两题初始工作区都是平台的 web-react-express 脚手架，不含 stage 1 成果 | 操作：stage 1 出分后再跑 stage 2，再 stage 3 |
+
+本机对照（Sheet REQ-1 子树 5 需求，deepseek-v4-flash 经平台网关，记录代理逐次计量）：
+
+| | 改前（arc.17 逻辑） | 改后（上述 arc 修复 + 内核 K1） |
+|---|---|---|
+| 最终验收 | 失败（每组 3 次尝试用尽） | `success=True`（尝试次数 1/1/2/1） |
+| 用时 | 3517 s | 1514 s |
+| 费用 | ¥2.45（输出 ¥1.34） | ¥0.99（输出 ¥0.33） |
+| 模型调用 | 166 | 107 |
+| tab/grid 约定（平台 95 条卡点） | 缺失 | 满足，刷新后保持 |
+
+内核 K1（`worker_system_prompt()`）：带 edit_file 的 worker 不再注入报告写作契约。
