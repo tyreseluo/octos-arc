@@ -221,6 +221,10 @@ def playwright_run(files: list[Path], env: dict, port: int) -> int:
         return 1
     rc_all = 0
     for f in files:
+        # ESM `import` ignores NODE_PATH: resolve bare names via a sibling node_modules.
+        link = f.parent / "node_modules"
+        if not link.exists() and not link.is_symlink():
+            link.symlink_to(pw_env["NODE_PATH"], target_is_directory=True)
         rc, log = sh(["node", str(f)], f.parent, dict(pw_env, E2E_BASE_URL=f"http://127.0.0.1:{port}", CI="1"),
                      E2E_TIMEOUT)
         print(f"[verify] self-check {f.name}: {'ok' if rc == 0 else 'FAILED'}\n{log[-2500:]}")

@@ -72,3 +72,41 @@ class E2eFileList(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SelfCheckModuleResolution(unittest.TestCase):
+    """Self-checks are ES modules (`import { chromium } from '@playwright/test'`).
+    Node never consults NODE_PATH for `import`, so pointing NODE_PATH at the
+    runner's Playwright left every .mjs check failing with ERR_MODULE_NOT_FOUND
+    and every requirement burning its repair rounds on a broken checker."""
+
+    def run_check(self, script: str, name: str = "x.mjs") -> int:
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "pwroot"
+            pkg = root / "node_modules" / "@playwright" / "test"
+            pkg.mkdir(parents=True)
+            (pkg / "package.json").write_text('{"name":"@playwright/test","version":"0.0.0","main":"index.js"}')
+            (pkg / "index.js").write_text("exports.chromium = 'stub';")
+            checks = Path(tmp) / "run" / "checks"
+            checks.mkdir(parents=True)
+            (checks / name).write_text(script)
+            old = os.environ.get("OCTOS_ARC_PLAYWRIGHT_ROOT")
+            os.environ["OCTOS_ARC_PLAYWRIGHT_ROOT"] = str(root)
+            try:
+                return verify_node.playwright_run([checks / name], dict(os.environ), 9)
+            finally:
+                if old is None:
+                    os.environ.pop("OCTOS_ARC_PLAYWRIGHT_ROOT")
+                else:
+                    os.environ["OCTOS_ARC_PLAYWRIGHT_ROOT"] = old
+
+    def test_should_resolve_playwright_when_check_is_an_es_module(self):
+        rc = self.run_check("import { chromium } from '@playwright/test';\n"
+                            "if (chromium !== 'stub') process.exit(3);\n")
+        self.assertEqual(rc, 0)
+
+    def test_should_still_resolve_playwright_when_check_is_commonjs(self):
+        rc = self.run_check("const { chromium } = require('@playwright/test');\n"
+                            "if (chromium !== 'stub') process.exit(3);\n", name="x.cjs")
+        self.assertEqual(rc, 0)
