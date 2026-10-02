@@ -58,8 +58,22 @@ fn redact_credential(m: &regex::Match<'_>) -> String {
     format!("{prefix}...[credential-redacted]")
 }
 
+/// `OCTOS_SCRUB_SECRET_ASSIGNMENTS=0` turns off the generic
+/// `password|secret|token = value` pattern (vendor-key patterns stay on). A
+/// coding worker that reads `password: f.password.value` and sees it rewritten
+/// to `pass...[credential-redacted]` writes that text back into the source.
+static SCRUB_SECRET_ASSIGNMENTS: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("OCTOS_SCRUB_SECRET_ASSIGNMENTS")
+        .map(|v| v.trim() != "0")
+        .unwrap_or(true)
+});
+
 /// Scrub known credential patterns from text.
 fn scrub_credentials(input: &str) -> Cow<'_, str> {
+    scrub_credentials_with(input, *SCRUB_SECRET_ASSIGNMENTS)
+}
+
+fn scrub_credentials_with(input: &str, assignments: bool) -> Cow<'_, str> {
     // Order matters: more specific patterns first to avoid partial matches.
     let result = ANTHROPIC_KEY_RE.replace_all(input, |caps: &regex::Captures<'_>| {
         redact_credential(&caps.get(0).unwrap())
@@ -79,6 +93,9 @@ fn scrub_credentials(input: &str) -> Cow<'_, str> {
     let result = BEARER_RE.replace_all(&result, |caps: &regex::Captures<'_>| {
         redact_credential(&caps.get(0).unwrap())
     });
+    if !assignments {
+        return Cow::Owned(result.into_owned());
+    }
     let result = SECRET_ASSIGN_RE.replace_all(&result, |caps: &regex::Captures<'_>| {
         redact_credential(&caps.get(0).unwrap())
     });
@@ -241,5 +258,30 @@ mod tests {
         let input = "sk-abc";
         let result = sanitize_tool_output(input);
         assert_eq!(result, input);
+    }
+
+    #[test]
+    fn should_keep_source_code_intact_when_assignment_scrub_is_off() {
+        // A coding worker reads `password: f.password.value`; redacting it to
+        // `pass...[credential-redacted]` made the model write that text back
+        // into app.js and the whole UI failed to parse.
+        let code = "body: JSON.stringify({ email, password: f.password.value }),";
+        assert_eq!(scrub_credentials_with(code, false), code);
+        let seed = r#"{ username: "alice-dev", password: "Valid-password-123!" }"#;
+        assert_eq!(scrub_credentials_with(seed, false), seed);
+    }
+
+    #[test]
+    fn should_still_redact_vendor_keys_when_assignment_scrub_is_off() {
+        let key = format!("key sk-{}", "a".repeat(30));
+        assert!(scrub_credentials_with(&key, false).contains("[credential-redacted]"));
+    }
+
+    #[test]
+    fn should_redact_assignments_when_scrub_is_on() {
+        assert!(
+            scrub_credentials_with("password = hunter2hunter2", true)
+                .contains("[credential-redacted]")
+        );
     }
 }
