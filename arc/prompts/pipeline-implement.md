@@ -47,6 +47,10 @@ Rules:
 - One primary entry per action name per page: two links or buttons with the
   same accessible name on one page are rejected. Every form control needs a
   visible label; every button and link needs an accessible name.
+- Whatever a requirement says a page or control *displays* must be visible
+  without any extra click. A menu that displays the signed-in account shows the
+  account name on its always-visible trigger, not only inside the closed
+  dropdown; hidden or collapsed text does not count as displayed.
 - Navigation completeness: every entry point this requirement names (links,
   tabs, menu items, buttons) must exist on the page the requirement puts it
   on, be visible, and lead to a real route — no dead entries.
@@ -66,7 +70,8 @@ external test file), launches chromium from '@playwright/test'
 (`import { chromium, expect } from '@playwright/test'`), opens
 `process.env.E2E_BASE_URL`, and walks EVERY scenario the requirement lists,
 in order: for each GIVEN/WHEN/THEN it opens the named page, clicks, fills,
-and asserts the expected visible result with `expect` — when the requirement
+and asserts the expected result is visible (`expect(...).toBeVisible()`,
+not mere presence in the DOM) — when the requirement
 names seeded accounts or entry points, the script signs in as each named
 account and opens each named entry to prove they exist and work. Print one
 `SELF-CHECK OK` line per scenario and exit 0; any failed expectation must
