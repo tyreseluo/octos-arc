@@ -321,7 +321,7 @@ def kernel_env(pol: dict, config_dir: Path) -> dict:
 #: release lacks; without them `run_pipeline` never appears. Published as a
 #: Linux x86_64 bundle; override with OCTOS_RELEASE_URL.
 OCTOS_RELEASE_URL = (
-    "https://github.com/tyreseluo/octos-arc/releases/download/v2.0.3-rc.11-arc.18/"
+    "https://github.com/tyreseluo/octos-arc/releases/download/v2.0.3-rc.11-arc.19/"
     "octos-bundle-x86_64-unknown-linux-gnu.tar.gz"
 )
 
