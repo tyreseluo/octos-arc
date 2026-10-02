@@ -637,6 +637,85 @@ impl CodergenHandler {
     }
 }
 
+/// The worker system prompt: the node prompt plus the role contract its tool
+/// set implies (report writer, analysis node). Pure, so it is unit-tested.
+fn worker_system_prompt(node: &PipelineNode) -> String {
+    let mut system_prompt = match &node.prompt {
+        Some(p) => p.clone(),
+        None => "Complete the task given to you.".to_string(),
+    };
+
+    // If the node has write_file tool, instruct the agent to save the full report
+    // to a file in ONE call and return a concise executive summary as text.
+    // Without explicit "single call" instruction, some models (e.g. kimi-k2.5)
+    // chunk output into ~4K token pieces across many iterations, causing timeouts.
+    //
+    // Only genuine final-report nodes get this. Fan-out workers (synthetic id
+    // `<parent>_task_<i>`) now also carry write_file, but they follow their own
+    // deliverable prompt (write `findings-<label>.md`, return a short summary);
+    // the generic report injection (descriptive filename, ~1000-word body,
+    // "delivered to the user") would contradict it and let a worker write an
+    // arbitrarily-named file the analyze node can't find.
+    //
+    // Coding workers (edit_file present) are not report writers: "the ENTIRE
+    // content in ONE SINGLE write_file call" plus a ~1000-word summary makes
+    // them rewrite whole source files and pay output tokens for prose.
+    let edits_code = node.tools.iter().any(|t| t == "edit_file");
+    if node.tools.iter().any(|t| t == "write_file") && !node.id.contains("_task_") && !edits_code {
+        system_prompt.push_str(
+            "\n\nIMPORTANT: You MUST do two things:\n\
+             1. Save your COMPLETE report in ONE SINGLE write_file call (choose a descriptive \
+             filename). Do NOT split the report across multiple write_file calls — put the \
+             ENTIRE content in one call, even if it is very long.\n\
+             2. After saving, return a concise executive summary (key findings, conclusions, \
+             recommendations) as your final text response — around 1000 words. \
+             The full report file will be delivered to the user separately.",
+        );
+    }
+
+    // Analyze-node guidance: when the node has deep_crawl or read_file but
+    // NOT write_file, it is an analysis/convergence node that receives
+    // merged search results.  Inject structure so the output is easy for
+    // the downstream synthesize node to consume.
+    let has_analysis_tool = node
+        .tools
+        .iter()
+        .any(|t| t == "deep_crawl" || t == "read_file");
+    let has_write = node.tools.iter().any(|t| t == "write_file");
+    if has_analysis_tool && !has_write {
+        system_prompt.push_str(
+            "\n\nOUTPUT STRUCTURE — you MUST organise your analysis using these sections:\n\
+             ## Key Findings\n\
+             Numbered list of the most important facts, data points, and conclusions \
+             drawn from the input sources. Each finding must cite its source.\n\n\
+             ## Contradictions & Conflicts\n\
+             List any claims that contradict each other across sources. For each, \
+             state the conflicting positions and which source supports each side.\n\n\
+             ## Gaps & Open Questions\n\
+             Identify topics or questions that the sources do NOT adequately address. \
+             If you used deep_crawl to fill a gap, note what you found.\n\n\
+             ## Sourced Claims\n\
+             A reference-style list mapping each major claim to its originating URL \
+             or document. Format: `[claim summary] — source: <URL or filename>`\n\n\
+             Keep your language precise and factual. Do NOT pad with filler. \
+             The next stage will use this structured output to write the final report.",
+        );
+    }
+
+    #[cfg(windows)]
+    {
+        system_prompt.push_str(
+            "\n\nWINDOWS RUNTIME RULES:\n\
+             - You are running on Windows.\n\
+             - If you use shell, write cmd.exe-compatible commands only.\n\
+             - Do NOT use Unix-only commands like `ps`, `grep`, `head`, `rm`, `ls`, `cat`, `which`, or `bash`.\n\
+             - Prefer built-in tools over shell whenever possible.\n\
+             - If a required tool or binary is unavailable on this host, state that explicitly and stop instead of retrying via shell.",
+        );
+    }
+    system_prompt
+}
+
 #[async_trait]
 impl Handler for CodergenHandler {
     async fn execute(&self, node: &PipelineNode, ctx: &HandlerContext) -> Result<NodeOutcome> {
@@ -757,75 +836,7 @@ impl Handler for CodergenHandler {
             tools.set_provider_policy(pp.clone());
         }
 
-        // Build system prompt from node prompt template
-        let mut system_prompt = match &node.prompt {
-            Some(p) => p.clone(),
-            None => "Complete the task given to you.".to_string(),
-        };
-
-        // If the node has write_file tool, instruct the agent to save the full report
-        // to a file in ONE call and return a concise executive summary as text.
-        // Without explicit "single call" instruction, some models (e.g. kimi-k2.5)
-        // chunk output into ~4K token pieces across many iterations, causing timeouts.
-        //
-        // Only genuine final-report nodes get this. Fan-out workers (synthetic id
-        // `<parent>_task_<i>`) now also carry write_file, but they follow their own
-        // deliverable prompt (write `findings-<label>.md`, return a short summary);
-        // the generic report injection (descriptive filename, ~1000-word body,
-        // "delivered to the user") would contradict it and let a worker write an
-        // arbitrarily-named file the analyze node can't find.
-        if node.tools.iter().any(|t| t == "write_file") && !node.id.contains("_task_") {
-            system_prompt.push_str(
-                "\n\nIMPORTANT: You MUST do two things:\n\
-                 1. Save your COMPLETE report in ONE SINGLE write_file call (choose a descriptive \
-                 filename). Do NOT split the report across multiple write_file calls — put the \
-                 ENTIRE content in one call, even if it is very long.\n\
-                 2. After saving, return a concise executive summary (key findings, conclusions, \
-                 recommendations) as your final text response — around 1000 words. \
-                 The full report file will be delivered to the user separately.",
-            );
-        }
-
-        // Analyze-node guidance: when the node has deep_crawl or read_file but
-        // NOT write_file, it is an analysis/convergence node that receives
-        // merged search results.  Inject structure so the output is easy for
-        // the downstream synthesize node to consume.
-        let has_analysis_tool = node
-            .tools
-            .iter()
-            .any(|t| t == "deep_crawl" || t == "read_file");
-        let has_write = node.tools.iter().any(|t| t == "write_file");
-        if has_analysis_tool && !has_write {
-            system_prompt.push_str(
-                "\n\nOUTPUT STRUCTURE — you MUST organise your analysis using these sections:\n\
-                 ## Key Findings\n\
-                 Numbered list of the most important facts, data points, and conclusions \
-                 drawn from the input sources. Each finding must cite its source.\n\n\
-                 ## Contradictions & Conflicts\n\
-                 List any claims that contradict each other across sources. For each, \
-                 state the conflicting positions and which source supports each side.\n\n\
-                 ## Gaps & Open Questions\n\
-                 Identify topics or questions that the sources do NOT adequately address. \
-                 If you used deep_crawl to fill a gap, note what you found.\n\n\
-                 ## Sourced Claims\n\
-                 A reference-style list mapping each major claim to its originating URL \
-                 or document. Format: `[claim summary] — source: <URL or filename>`\n\n\
-                 Keep your language precise and factual. Do NOT pad with filler. \
-                 The next stage will use this structured output to write the final report.",
-            );
-        }
-
-        #[cfg(windows)]
-        {
-            system_prompt.push_str(
-                "\n\nWINDOWS RUNTIME RULES:\n\
-                 - You are running on Windows.\n\
-                 - If you use shell, write cmd.exe-compatible commands only.\n\
-                 - Do NOT use Unix-only commands like `ps`, `grep`, `head`, `rm`, `ls`, `cat`, `which`, or `bash`.\n\
-                 - Prefer built-in tools over shell whenever possible.\n\
-                 - If a required tool or binary is unavailable on this host, state that explicitly and stop instead of retrying via shell.",
-            );
-        }
+        let system_prompt = worker_system_prompt(node);
 
         // Create and run the agent.
         // When max_output_tokens is not set in the DOT graph, use the
@@ -1523,6 +1534,45 @@ mod tests {
     /// the `_ => return` arm. This is the bridge that lets per-node cost
     /// updates from inner-agent loops reach the parent SSE stream so the
     /// W1.G4 CostBreakdown panel can render them inline with the node tree.
+    #[test]
+    fn should_not_inject_report_contract_when_node_edits_code() {
+        // A coding worker (edit_file present) told to put "the ENTIRE content"
+        // in "ONE SINGLE write_file call" plus a ~1000-word summary rewrites
+        // whole source files and pays output tokens for prose nobody reads.
+        let node = PipelineNode {
+            id: "impl_req_1".into(),
+            prompt: Some("Implement requirement REQ-1.".into()),
+            tools: vec!["read_file".into(), "write_file".into(), "edit_file".into()],
+            ..Default::default()
+        };
+        let prompt = worker_system_prompt(&node);
+        assert!(prompt.starts_with("Implement requirement REQ-1."));
+        assert!(!prompt.contains("ONE SINGLE write_file call"), "{prompt}");
+        assert!(!prompt.contains("executive summary"), "{prompt}");
+    }
+
+    #[test]
+    fn should_keep_report_contract_when_node_only_writes_a_report() {
+        let node = PipelineNode {
+            id: "synthesize".into(),
+            prompt: Some("Write the report.".into()),
+            tools: vec!["write_file".into()],
+            ..Default::default()
+        };
+        assert!(worker_system_prompt(&node).contains("ONE SINGLE write_file call"));
+    }
+
+    #[test]
+    fn should_keep_analysis_structure_when_node_reads_without_writing() {
+        let node = PipelineNode {
+            id: "analyze".into(),
+            prompt: Some("Analyze.".into()),
+            tools: vec!["read_file".into()],
+            ..Default::default()
+        };
+        assert!(worker_system_prompt(&node).contains("OUTPUT STRUCTURE"));
+    }
+
     #[test]
     fn dot_reasoning_effort_maps_to_the_provider_level() {
         use octos_llm::ReasoningEffort as E;
