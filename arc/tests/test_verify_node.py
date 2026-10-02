@@ -158,3 +158,42 @@ class WorkspaceMap(unittest.TestCase):
             finally:
                 os.chdir(cwd)
         self.assertIn("GET /api/items", buf.getvalue())
+
+
+class SyntaxGate(unittest.TestCase):
+    """A JS file that does not parse blanks every page it powers: cloud stage-1
+    run 18145df8d1e0 shipped an app.js with `pass...[credential-redacted]` in it
+    and scored 0/30 although the server booted and GET / answered 200."""
+
+    def app(self, files: dict) -> Path:
+        root = Path(tempfile.mkdtemp(prefix="arc-syn-"))
+        for rel, text in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text)
+        return root
+
+    def test_should_report_file_and_line_when_a_frontend_script_does_not_parse(self):
+        root = self.app({"frontend/src/assets/app.js": "const a = 1;\nsend({ pass...[credential-redacted] });\n",
+                         "backend/server.js": "module.exports = 1;\n"})
+        problems = verify_node.syntax_errors(root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("frontend/src/assets/app.js", problems[0])
+        self.assertIn(":2", problems[0])
+
+    def test_should_accept_es_modules_and_commonjs_when_both_parse(self):
+        root = self.app({"frontend/src/assets/mod.js": "import x from './x.js';\nexport const y = x;\n",
+                         "backend/routes/a.js": "module.exports = (api) => { api.get('/x', () => {}); };\n"})
+        self.assertEqual(verify_node.syntax_errors(root), [])
+
+    def test_should_skip_dependencies_when_scanning(self):
+        root = self.app({"backend/node_modules/bad/index.js": "this is not js(",
+                         "frontend/dist/app.js": "neither is this(("})
+        self.assertEqual(verify_node.syntax_errors(root), [])
+
+    def test_should_not_snapshot_the_runtime_store_when_saving_a_good_state(self):
+        root = self.app({"backend/server.js": "1;\n", "backend/data/store.json": "{}",
+                         "frontend/src/index.html": "<p></p>"})
+        dest = root / "good"
+        verify_node.snapshot(root, dest)
+        self.assertTrue((dest / "backend" / "server.js").is_file())
+        self.assertFalse((dest / "backend" / "data" / "store.json").exists())

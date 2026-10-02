@@ -161,6 +161,29 @@ def playwright_env(env: dict) -> dict | None:
     return None
 
 
+def syntax_errors(app: Path) -> list[str]:
+    """Every app script must parse: one syntax error blanks every page it powers."""
+    problems = []
+    for part in ("frontend", "backend"):
+        for f in sorted((app / part).rglob("*")) if (app / part).is_dir() else []:
+            rel = f.relative_to(app)
+            if f.suffix not in (".js", ".mjs", ".cjs") or not f.is_file() or {"node_modules", "dist"} & set(rel.parts):
+                continue
+            target, tmp = f, None
+            if f.suffix == ".js" and re.search(r"^\s*(import|export)\s", f.read_text(errors="replace"), re.M):
+                tmp = Path(tempfile.mkdtemp(prefix="arc-esm-"))
+                target = Path(shutil.copy2(f, tmp / (f.stem + ".mjs")))
+            res = subprocess.run(["node", "--check", str(target)], capture_output=True, text=True, timeout=60)
+            if tmp:
+                shutil.rmtree(tmp, ignore_errors=True)
+            if res.returncode:
+                head = res.stderr.strip().splitlines()
+                line = re.search(r":(\d+)\s*$", head[0]).group(1) if head and re.search(r":(\d+)\s*$", head[0]) else "?"
+                msg = next((x for x in head if "Error" in x), head[-1] if head else "does not parse")
+                problems.append(f"{rel.as_posix()}:{line}: {msg.strip()}")
+    return problems[:8]
+
+
 def copy_app(out: Path, prefix: str) -> Path:
     """A disposable copy, so a check's boot writes no store debris that would
     ship with the app (the grader would then start dirty)."""
@@ -290,6 +313,11 @@ def check(port: int, e2e: str | None, e2e_dir: str | None, e2e_list: str | None 
     try:
         if not prepare(app, env):
             return 1
+        bad = syntax_errors(app)
+        if bad:
+            for b in bad:
+                print(f"[verify] syntax: {b}")
+            return 1
         if not free(port):
             print(f"[verify] port {port} already serving; refusing to score another process")
             return 1
@@ -359,7 +387,7 @@ def snapshot(out: Path, dest: Path) -> None:
     shutil.rmtree(dest, ignore_errors=True)
     for part in ("frontend", "backend"):
         if (out / part).is_dir():
-            shutil.copytree(out / part, dest / part, ignore=shutil.ignore_patterns("node_modules", "dist"))
+            shutil.copytree(out / part, dest / part, ignore=shutil.ignore_patterns("node_modules", "dist", "store.json"))
 
 
 def main(argv: list[str]) -> int:

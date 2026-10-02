@@ -76,7 +76,8 @@ done
 # mapping/slicing, smoke-only acceptance): the glue should stay well under it.
 # 1280: requirement prompts now carry their ancestor FOLDER rules (folder_rules()).
 # 1300: verify_node prints a workspace map for the next implement node.
-LIMIT_PY=1300
+# 1320: a node --check syntax gate before boot.
+LIMIT_PY=1320
 PYLINES=$(find "$PKG" -name '*.py' -exec cat {} + | wc -l | tr -d ' ')
 echo "打包内容：$(find "$PKG" -maxdepth 1 -mindepth 1 -printf '%f ' 2>/dev/null || ls "$PKG" | tr '\n' ' ')"
 echo "包内 Python 行数：$PYLINES"

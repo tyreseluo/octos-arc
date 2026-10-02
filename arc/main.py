@@ -307,6 +307,9 @@ def kernel_env(pol: dict, config_dir: Path) -> dict:
     env["OCTOS_LLM_MAX_RETRIES"] = "8"
     env["OCTOS_STDIO_REASONING_EFFORT"] = pol["reasoning"]
     env.setdefault("OCTOS_DANGER_FULL_ACCESS", "1")
+    # The generic `password = value` scrub rewrites app source the worker reads
+    # (`pass...[credential-redacted]`) and the worker writes it back.
+    env["OCTOS_SCRUB_SECRET_ASSIGNMENTS"] = "0"
     env.setdefault("npm_config_registry", "https://registry.npmjs.org")
     env["_ARC"] = json.dumps({"provider": provider, "model": model, "key_env": key_env,
                               "base_url": base_url})
@@ -594,8 +597,8 @@ def collect_app(data_dir: Path, out: Path, name: str) -> Path | None:
     copied = [part for part in ("frontend", "backend") if (source / part).is_dir()]
     for part in copied:
         shutil.rmtree(out / part, ignore_errors=True)
-        shutil.copytree(source / part, out / part,
-                        ignore=shutil.ignore_patterns("node_modules", ".git"))
+        shutil.copytree(source / part, out / part,      # never ship the runtime store
+                        ignore=shutil.ignore_patterns("node_modules", ".git", "store.json"))
     log(f"[arc] collected {copied or 'nothing'} from {runs[-1].name}")
     return runs[-1]
 
